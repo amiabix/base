@@ -435,6 +435,21 @@ pub trait BaseProofsInitialStateStore: Send + Sync + Debug {
         storage_nodes: Vec<(Nibbles, Option<BranchNodeCompact>)>,
     ) -> BaseProofsStorageResult<()>;
 
+    /// Store storage trie branches for multiple addresses in a single batch operation.
+    ///
+    /// The default implementation loops and calls [`Self::store_storage_branches`] per address.
+    /// Override this method on backends that can merge all writes into one durable commit (e.g.
+    /// a single RocksDB `WriteBatch`) to avoid the per-address fsync cost during initialization.
+    fn store_storage_branches_bulk(
+        &self,
+        entries: Vec<(B256, Vec<(Nibbles, Option<BranchNodeCompact>)>)>,
+    ) -> BaseProofsStorageResult<()> {
+        for (hashed_address, nodes) in entries {
+            self.store_storage_branches(hashed_address, nodes)?;
+        }
+        Ok(())
+    }
+
     /// Store a batch of account trie leaf nodes. Used for saving existing state.
     fn store_hashed_accounts(
         &self,
@@ -447,6 +462,21 @@ pub trait BaseProofsInitialStateStore: Send + Sync + Debug {
         hashed_address: B256,
         storages: Vec<(B256, U256)>,
     ) -> BaseProofsStorageResult<()>;
+
+    /// Store hashed storage slots for multiple addresses in a single batch operation.
+    ///
+    /// The default implementation loops and calls [`Self::store_hashed_storages`] per address.
+    /// Override this method on backends that can merge all writes into one durable commit (e.g.
+    /// a single RocksDB `WriteBatch`) to avoid the per-address fsync cost during initialization.
+    fn store_hashed_storages_bulk(
+        &self,
+        entries: Vec<(B256, Vec<(B256, U256)>)>,
+    ) -> BaseProofsStorageResult<()> {
+        for (hashed_address, storages) in entries {
+            self.store_hashed_storages(hashed_address, storages)?;
+        }
+        Ok(())
+    }
 
     /// Commit the initial state - mark the anchor as completed and also set the earliest block
     /// number to anchor.

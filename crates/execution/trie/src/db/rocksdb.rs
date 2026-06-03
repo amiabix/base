@@ -2118,20 +2118,30 @@ impl BaseProofsInitialStateStore for RocksdbProofsStorage {
         hashed_address: B256,
         storage_nodes: Vec<(Nibbles, Option<BranchNodeCompact>)>,
     ) -> BaseProofsStorageResult<()> {
-        let mut storage_nodes = storage_nodes;
-        if storage_nodes.is_empty() {
+        self.store_storage_branches_bulk(vec![(hashed_address, storage_nodes)])
+    }
+
+    fn store_storage_branches_bulk(
+        &self,
+        entries: Vec<(B256, Vec<(Nibbles, Option<BranchNodeCompact>)>)>,
+    ) -> BaseProofsStorageResult<()> {
+        if entries.is_empty() {
             return Ok(());
         }
-
-        storage_nodes.sort_by_key(|(key, _)| *key);
         let _guard = self.history_gate.write();
         let mut batch = WriteBatch::default();
-        self.persist_history_batch::<StorageTrieHistory, _, _>(
-            &mut batch,
-            0,
-            storage_nodes.into_iter().map(|(path, node)| (hashed_address, path, node)),
-            true,
-        )?;
+        for (hashed_address, mut storage_nodes) in entries {
+            if storage_nodes.is_empty() {
+                continue;
+            }
+            storage_nodes.sort_by_key(|(key, _)| *key);
+            self.persist_history_batch::<StorageTrieHistory, _, _>(
+                &mut batch,
+                0,
+                storage_nodes.into_iter().map(|(path, node)| (hashed_address, path, node)),
+                true,
+            )?;
+        }
         self.db.write_opt(batch, &self.write_options).map_err(rocksdb_error)?;
         Ok(())
     }
@@ -2163,22 +2173,32 @@ impl BaseProofsInitialStateStore for RocksdbProofsStorage {
         hashed_address: B256,
         storages: Vec<(B256, U256)>,
     ) -> BaseProofsStorageResult<()> {
-        let mut storages = storages;
-        if storages.is_empty() {
+        self.store_hashed_storages_bulk(vec![(hashed_address, storages)])
+    }
+
+    fn store_hashed_storages_bulk(
+        &self,
+        entries: Vec<(B256, Vec<(B256, U256)>)>,
+    ) -> BaseProofsStorageResult<()> {
+        if entries.is_empty() {
             return Ok(());
         }
-
-        storages.sort_by_key(|(key, _)| *key);
         let _guard = self.history_gate.write();
         let mut batch = WriteBatch::default();
-        self.persist_history_batch::<HashedStorageHistory, _, _>(
-            &mut batch,
-            0,
-            storages
-                .into_iter()
-                .map(|(key, value)| (hashed_address, key, Some(StorageValue(value)))),
-            true,
-        )?;
+        for (hashed_address, mut storages) in entries {
+            if storages.is_empty() {
+                continue;
+            }
+            storages.sort_by_key(|(key, _)| *key);
+            self.persist_history_batch::<HashedStorageHistory, _, _>(
+                &mut batch,
+                0,
+                storages
+                    .into_iter()
+                    .map(|(key, value)| (hashed_address, key, Some(StorageValue(value)))),
+                true,
+            )?;
+        }
         self.db.write_opt(batch, &self.write_options).map_err(rocksdb_error)?;
         Ok(())
     }
@@ -2191,14 +2211,25 @@ impl BaseProofsInitialStateStore for RocksdbProofsStorage {
     }
 }
 
-/// Pass-through batch session for [`RocksdbProofsStorage`].
+/// Batch session for [`RocksdbProofsStorage`].
 ///
 /// Unlike the MDBX implementation, `RocksDB` does not expose a transaction cursor readable
-/// mid-session; each `store_trie_updates` call commits immediately via a write batch. All
-/// cursor reads see durably committed state at the time the cursor is opened.
+/// mid-session; each `store_trie_updates` call commits immediately via a write batch. To
+/// avoid the per-cursor cost of `db.snapshot()` (which pins SST files against compaction
+/// and is expensive enough at the thousands-per-block scale to stall sync), the session
+/// holds ONE snapshot and reuses it across all cursor reads. The snapshot is refreshed
+/// after each `store_trie_updates` so subsequent block reads observe the prior commit.
 #[derive(Debug)]
 pub struct RocksdbBatchSession<'a> {
     storage: &'a RocksdbProofsStorage,
+    snapshot: Arc<RocksdbReadSnapshot<'a>>,
+}
+
+impl<'a> RocksdbBatchSession<'a> {
+    fn new(storage: &'a RocksdbProofsStorage) -> Self {
+        let snapshot = Arc::new(RocksdbReadSnapshot::new(storage.db.as_ref()));
+        Self { storage, snapshot }
+    }
 }
 
 impl BaseProofsBatchSession for RocksdbBatchSession<'_> {
@@ -2232,14 +2263,18 @@ impl BaseProofsBatchSession for RocksdbBatchSession<'_> {
         hashed_address: B256,
         max_block_number: u64,
     ) -> BaseProofsStorageResult<Self::StorageTrieCursor<'_>> {
-        self.storage.storage_trie_cursor(hashed_address, max_block_number)
+        self.storage.storage_trie_cursor_with_tx(
+            &self.snapshot,
+            hashed_address,
+            max_block_number,
+        )
     }
 
     fn account_trie_cursor(
         &self,
         max_block_number: u64,
     ) -> BaseProofsStorageResult<Self::AccountTrieCursor<'_>> {
-        self.storage.account_trie_cursor(max_block_number)
+        self.storage.account_trie_cursor_with_tx(&self.snapshot, max_block_number)
     }
 
     fn storage_hashed_cursor(
@@ -2247,14 +2282,18 @@ impl BaseProofsBatchSession for RocksdbBatchSession<'_> {
         hashed_address: B256,
         max_block_number: u64,
     ) -> BaseProofsStorageResult<Self::StorageCursor<'_>> {
-        self.storage.storage_hashed_cursor(hashed_address, max_block_number)
+        self.storage.storage_hashed_cursor_with_tx(
+            &self.snapshot,
+            hashed_address,
+            max_block_number,
+        )
     }
 
     fn account_hashed_cursor(
         &self,
         max_block_number: u64,
     ) -> BaseProofsStorageResult<Self::AccountHashedCursor<'_>> {
-        self.storage.account_hashed_cursor(max_block_number)
+        self.storage.account_hashed_cursor_with_tx(&self.snapshot, max_block_number)
     }
 
     fn store_trie_updates(
@@ -2262,7 +2301,10 @@ impl BaseProofsBatchSession for RocksdbBatchSession<'_> {
         block_ref: BlockWithParent,
         block_state_diff: BlockStateDiff,
     ) -> BaseProofsStorageResult<WriteCounts> {
-        self.storage.store_trie_updates(block_ref, block_state_diff)
+        let counts = self.storage.store_trie_updates(block_ref, block_state_diff)?;
+        // Refresh the snapshot so the next block's cursor reads observe this commit.
+        self.snapshot = Arc::new(RocksdbReadSnapshot::new(self.storage.db.as_ref()));
+        Ok(counts)
     }
 }
 
@@ -2276,7 +2318,7 @@ impl BaseProofsBatchStore for RocksdbProofsStorage {
     where
         F: FnOnce(&mut Self::BatchSession<'_>) -> BaseProofsStorageResult<R>,
     {
-        let mut session = RocksdbBatchSession { storage: self };
+        let mut session = RocksdbBatchSession::new(self);
         f(&mut session)
     }
 }
@@ -3022,6 +3064,13 @@ fn prefix_read_options(prefix: &[u8]) -> ReadOptions {
     if let Some(upper_bound) = prefix_upper_bound(prefix) {
         read_options.set_iterate_upper_bound(upper_bound);
     }
+    // CF prefix extractor is the full KEY_LEN (e.g. 65 bytes for StorageTrieHistory =
+    // 32B hashed_address + 33B packed nibbles). Callers seek with a shorter prefix
+    // (e.g. 32B hashed_address only). Without total_order_seek, the prefix bloom
+    // filter compares full-length extracted prefixes and silently skips SST blocks
+    // after a flush, dropping all entries except those still in the memtable. The
+    // explicit iterate_lower_bound / iterate_upper_bound above still scope the scan.
+    read_options.set_total_order_seek(true);
     read_options
 }
 
