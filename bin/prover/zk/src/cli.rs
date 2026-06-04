@@ -13,6 +13,8 @@ use base_zk_service::{
     OpSuccinctNetworkBackend, OpSuccinctProvider, ProofRequestManager, ProverServiceServer,
     ProverWorkerPool, ProxyConfigs, RateLimitConfig, StatusPoller, start_all_proxies,
 };
+#[cfg(feature = "zisk")]
+use base_zk_service::{ZiskEmbeddedBackend, ZiskMockBackend, ZiskProvider};
 use clap::Parser;
 use eyre::eyre;
 use http::header;
@@ -104,6 +106,9 @@ struct ZkArgs {
 
     #[arg(long, env = "SP1_PROVER", default_value = "cluster")]
     prover_mode: String,
+
+    #[arg(long, env = "BASE_ZISK_PLONK_ENABLED", default_value_t = false)]
+    zisk_plonk_enabled: bool,
 
     #[arg(long, env = "SP1_CLUSTER_API_ENDPOINT")]
     sp1_cluster_api_endpoint: Option<String>,
@@ -207,8 +212,19 @@ impl ZkArgs {
         };
 
         let mut backend_registry = BackendRegistry::new();
+        let zisk_backend_registered = self
+            .register_zisk_backend(
+                &mut backend_registry,
+                rpc_config.clone(),
+                &l1_url,
+                &l2_url,
+                &beacon_url,
+            )
+            .await?;
 
-        if self.prover_mode == "dry-run" {
+        if zisk_backend_registered {
+            info!("ZisK backend registered");
+        } else if self.prover_mode == "dry-run" {
             info!("SP1_PROVER=dry-run: using local SP1 execution backend");
 
             let fetcher = Arc::new(
@@ -458,15 +474,90 @@ impl ZkArgs {
         Ok(())
     }
 
+    #[cfg(feature = "zisk")]
+    async fn register_zisk_backend(
+        &self,
+        backend_registry: &mut BackendRegistry,
+        rpc_config: RPCConfig,
+        l1_url: &str,
+        l2_url: &str,
+        beacon_url: &str,
+    ) -> eyre::Result<bool> {
+        if self.prover_mode == "zisk-mock" {
+            info!("SP1_PROVER=zisk-mock: using ZisK MockBackend");
+            let mock_backend = ZiskMockBackend::new();
+            backend_registry.register(Arc::new(mock_backend));
+            return Ok(true);
+        }
+
+        if !matches!(self.prover_mode.as_str(), "zisk" | "zisk-embedded") {
+            return Ok(false);
+        }
+
+        info!(
+            plonk_enabled = self.zisk_plonk_enabled,
+            "SP1_PROVER=zisk: using embedded ZisK backend"
+        );
+        let fetcher = Arc::new(
+            base_proof_succinct_host_utils::fetcher::OPSuccinctDataFetcher::from_rpc_config_with_rollup_config(rpc_config)
+                .await
+                .map_err(|e| eyre!("failed to create OPSuccinctDataFetcher for ZisK: {e}"))?,
+        );
+        let provider = ZiskProvider::new(fetcher);
+        let config = BackendConfig::Zisk {
+            base_consensus_url: self.base_consensus_address.clone(),
+            l1_node_url: l1_url.to_string(),
+            l1_beacon_url: beacon_url.to_string(),
+            l2_node_url: l2_url.to_string(),
+            default_sequence_window: self.default_sequence_window,
+            plonk_enabled: self.zisk_plonk_enabled,
+            timeout_hours: self.sp1_cluster_timeout_hours,
+        };
+        let backend = ZiskEmbeddedBackend::new(provider, config)
+            .map_err(|e| eyre!("failed to create ZisK embedded backend: {e}"))?;
+        backend_registry.register(Arc::new(backend));
+        Ok(true)
+    }
+
+    #[cfg(not(feature = "zisk"))]
+    async fn register_zisk_backend(
+        &self,
+        _backend_registry: &mut BackendRegistry,
+        _rpc_config: RPCConfig,
+        _l1_url: &str,
+        _l2_url: &str,
+        _beacon_url: &str,
+    ) -> eyre::Result<bool> {
+        Ok(false)
+    }
+
     fn validate_config(&self) -> eyre::Result<()> {
-        if !matches!(self.prover_mode.as_str(), "cluster" | "mock" | "network" | "dry-run") {
+        if !matches!(
+            self.prover_mode.as_str(),
+            "cluster" | "mock" | "network" | "dry-run" | "zisk" | "zisk-embedded" | "zisk-mock"
+        ) {
             eyre::bail!(
-                "SP1_PROVER must be set to 'cluster', 'mock', 'network', or 'dry-run', got '{}'",
+                "SP1_PROVER must be set to 'cluster', 'mock', 'network', 'dry-run', 'zisk', \
+                 'zisk-embedded', or 'zisk-mock', got '{}'",
+                self.prover_mode
+            );
+        }
+
+        #[cfg(not(feature = "zisk"))]
+        if matches!(self.prover_mode.as_str(), "zisk" | "zisk-embedded" | "zisk-mock") {
+            eyre::bail!(
+                "SP1_PROVER={} requires building base-prover-zk with --features zisk",
                 self.prover_mode
             );
         }
 
         if matches!(self.prover_mode.as_str(), "mock" | "dry-run") {
+            info!(prover_mode = %self.prover_mode, "configuration validated");
+            return Ok(());
+        }
+
+        #[cfg(feature = "zisk")]
+        if matches!(self.prover_mode.as_str(), "zisk" | "zisk-embedded" | "zisk-mock") {
             info!(prover_mode = %self.prover_mode, "configuration validated");
             return Ok(());
         }

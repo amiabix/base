@@ -44,7 +44,48 @@ fn get_receipt_by_type(
 
             Ok(proof_with_pv.bytes())
         }
+        ReceiptType::ZiskVadcop => proof_req
+            .stark_receipt
+            .clone()
+            .ok_or_else(|| Status::not_found("ZisK VADCOP receipt not available")),
+        ReceiptType::ZiskPlonk => proof_req
+            .snark_receipt
+            .clone()
+            .ok_or_else(|| Status::not_found("ZisK PLONK receipt not available")),
+        ReceiptType::ZiskOnChainPlonk => {
+            let snark_bytes = proof_req
+                .snark_receipt
+                .as_ref()
+                .ok_or_else(|| Status::not_found("ZisK PLONK receipt not available"))?;
+            zisk_on_chain_plonk_payload(snark_bytes)
+        }
     }
+}
+
+#[cfg(feature = "zisk")]
+fn zisk_on_chain_plonk_payload(snark_bytes: &[u8]) -> Result<Vec<u8>, Status> {
+    let (proof, _): (zisk_sdk::Proof, _) =
+        bincode::serde::decode_from_slice(snark_bytes, bincode::config::standard()).map_err(
+            |e| Status::internal(format!("Failed to deserialize ZisK PLONK proof: {e}")),
+        )?;
+
+    let zisk_sdk::ProofBody::Plonk { proof_bytes, plonk_vk } = &proof.body else {
+        return Err(Status::failed_precondition("stored ZisK receipt is not a PLONK proof"));
+    };
+
+    let public_bytes = proof.publics.bytes_solidity(&proof.program_vk, &plonk_vk.vadcop_vk);
+    let mut payload = Vec::with_capacity(1 + proof_bytes.len() + public_bytes.len());
+    payload.push(0x02);
+    payload.extend_from_slice(proof_bytes);
+    payload.extend_from_slice(&public_bytes);
+    Ok(payload)
+}
+
+#[cfg(not(feature = "zisk"))]
+fn zisk_on_chain_plonk_payload(_snark_bytes: &[u8]) -> Result<Vec<u8>, Status> {
+    Err(Status::failed_precondition(
+        "ZisK on-chain PLONK receipts require the base-zk-service `zisk` feature",
+    ))
 }
 
 fn execution_stats_from_metadata(metadata: &serde_json::Value) -> Option<ExecutionStats> {
@@ -368,5 +409,57 @@ mod tests {
         let err = get_receipt_by_type(&req, ReceiptType::OnChainSnark).unwrap_err();
         assert_eq!(err.code(), tonic::Code::NotFound);
         assert!(err.message().contains("SNARK"));
+    }
+
+    #[cfg(feature = "zisk")]
+    fn dummy_plonk_vkey() -> zisk_sdk::PlonkVkey {
+        zisk_sdk::PlonkVkey {
+            protocol: "plonk".to_string(),
+            curve: "bn128".to_string(),
+            n_public: 1,
+            power: 1,
+            k1: "0".to_string(),
+            k2: "0".to_string(),
+            qm: ["0".to_string(), "0".to_string(), "0".to_string()],
+            ql: ["0".to_string(), "0".to_string(), "0".to_string()],
+            qr: ["0".to_string(), "0".to_string(), "0".to_string()],
+            qo: ["0".to_string(), "0".to_string(), "0".to_string()],
+            qc: ["0".to_string(), "0".to_string(), "0".to_string()],
+            s1: ["0".to_string(), "0".to_string(), "0".to_string()],
+            s2: ["0".to_string(), "0".to_string(), "0".to_string()],
+            s3: ["0".to_string(), "0".to_string(), "0".to_string()],
+            x_2: [
+                ["0".to_string(), "0".to_string()],
+                ["0".to_string(), "0".to_string()],
+                ["0".to_string(), "0".to_string()],
+            ],
+            w: "0".to_string(),
+        }
+    }
+
+    #[cfg(feature = "zisk")]
+    #[test]
+    fn test_get_receipt_zisk_on_chain_plonk_returns_contract_payload() {
+        let proof_bytes = vec![0xAA, 0xBB, 0xCC];
+        let proof = zisk_sdk::Proof::new(
+            zisk_sdk::ProofBody::Plonk {
+                proof_bytes: proof_bytes.clone(),
+                plonk_vk: Box::new(zisk_sdk::PlonkVkBlob {
+                    vadcop_vk: vec![1, 2, 3, 4],
+                    plonk_vkey: dummy_plonk_vkey(),
+                }),
+            },
+            zisk_sdk::PublicValues::new_empty(),
+            zisk_sdk::ProgramVK::new_empty(),
+        );
+        let encoded = bincode::serde::encode_to_vec(&proof, bincode::config::standard())
+            .expect("serialize test ZisK proof");
+        let req = make_proof_request(None, Some(encoded));
+
+        let result = get_receipt_by_type(&req, ReceiptType::ZiskOnChainPlonk).unwrap();
+
+        assert_eq!(result[0], 0x02);
+        assert_eq!(&result[1..1 + proof_bytes.len()], proof_bytes.as_slice());
+        assert!(result.len() > 1 + proof_bytes.len());
     }
 }

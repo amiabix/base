@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     collections::{HashMap, HashSet, VecDeque},
+    env,
     panic::AssertUnwindSafe,
     sync::{Arc, Mutex},
 };
@@ -12,7 +13,7 @@ use alloy_eips::{
 use alloy_network::Network;
 use alloy_primitives::{Address, B64, B256, Bytes, keccak256};
 use alloy_provider::Provider;
-use alloy_rlp::Decodable;
+use alloy_rlp::{Decodable, Encodable};
 use alloy_rpc_types::{Block, debug::ExecutionWitness};
 use ark_ff::{BigInteger, PrimeField};
 use base_common_consensus::{HoloceneExtraData, JovianExtraData, Predeploys};
@@ -46,6 +47,96 @@ const L1_HEADER_PREFETCH_MAX_IN_FLIGHT: usize = 32;
 // cache mutex. Keep the bound close to the active lookbehind window so failed RPC bursts do not scan
 // a long history of already-prefetched blocks.
 const L1_HEADER_PREFETCH_MAX_SCHEDULED_BLOCKS: usize = 4096;
+const RAW_HEADER_DEBUG_RPC_ENV: &str = "BASE_RAW_HEADER_DEBUG_RPC";
+const L1_HEADER_PREFETCH_LOOKBEHIND_ENV: &str = "BASE_L1_HEADER_PREFETCH_LOOKBEHIND_BLOCKS";
+
+fn encode_raw_header(header: &Header) -> Bytes {
+    let mut raw_header = Vec::new();
+    header.encode(&mut raw_header);
+    Bytes::from(raw_header)
+}
+
+fn raw_header_debug_rpc_enabled() -> bool {
+    env::var(RAW_HEADER_DEBUG_RPC_ENV)
+        .map(|value| !matches!(value.as_str(), "0" | "false" | "FALSE"))
+        .unwrap_or(true)
+}
+
+fn l1_header_prefetch_lookbehind_blocks() -> u64 {
+    env::var(L1_HEADER_PREFETCH_LOOKBEHIND_ENV)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(L1_HEADER_PREFETCH_LOOKBEHIND_BLOCKS)
+}
+
+async fn fetch_l1_raw_header_by_number(
+    providers: &HostProviders,
+    block_number: u64,
+) -> Result<Bytes> {
+    if raw_header_debug_rpc_enabled() {
+        match providers
+            .l1
+            .client()
+            .request("debug_getRawHeader", (BlockId::number(block_number),))
+            .await
+        {
+            Ok(raw_header) => return Ok(raw_header),
+            Err(err) => {
+                debug!(
+                    target: HOST_SERVER_TARGET,
+                    block_number,
+                    error = %err,
+                    "debug raw l1 header unavailable, falling back to block RPC"
+                );
+            }
+        }
+    }
+
+    let block = providers
+        .l1
+        .get_block_by_number(BlockNumberOrTag::Number(block_number))
+        .await?
+        .ok_or(HostError::BlockNotFound)?;
+    Ok(encode_raw_header(&block.header.inner))
+}
+
+async fn fetch_l1_raw_header_by_hash(providers: &HostProviders, hash: B256) -> Result<Bytes> {
+    if raw_header_debug_rpc_enabled() {
+        match providers.l1.client().request("debug_getRawHeader", [hash]).await {
+            Ok(raw_header) => return Ok(raw_header),
+            Err(err) => {
+                debug!(
+                    target: HOST_SERVER_TARGET,
+                    hash = %hash,
+                    error = %err,
+                    "debug raw l1 header unavailable, falling back to block RPC"
+                );
+            }
+        }
+    }
+
+    let block = providers.l1.get_block_by_hash(hash).await?.ok_or(HostError::BlockNotFound)?;
+    Ok(encode_raw_header(&block.header.inner))
+}
+
+async fn fetch_l2_raw_header_by_hash(providers: &HostProviders, hash: B256) -> Result<Bytes> {
+    if raw_header_debug_rpc_enabled() {
+        match providers.l2.client().request("debug_getRawHeader", [hash]).await {
+            Ok(raw_header) => return Ok(raw_header),
+            Err(err) => {
+                debug!(
+                    target: HOST_SERVER_TARGET,
+                    hash = %hash,
+                    error = %err,
+                    "debug raw l2 header unavailable, falling back to block RPC"
+                );
+            }
+        }
+    }
+
+    let block = providers.l2.get_block_by_hash(hash).await?.ok_or(HostError::BlockNotFound)?;
+    Ok(encode_raw_header(&block.header.inner))
+}
 
 #[derive(Debug, Default)]
 struct PayloadWitnessPrefetchState {
@@ -516,7 +607,7 @@ impl L1HeaderCache {
         let mut state = self.lock_state();
 
         // Schedule a bounded lookbehind batch while holding the mutex once. This can briefly block
-        // ready-cache access, but the batch is capped at `L1_HEADER_PREFETCH_LOOKBEHIND_BLOCKS` and
+        // ready-cache access, but the batch is capped before this iterator reaches the cache and
         // each step is an amortized O(1) collection operation.
         for block_number in block_numbers {
             if state.scheduled_blocks.contains(&block_number) {
@@ -587,11 +678,15 @@ impl L1HeaderPrefetcher {
     }
 
     pub(crate) fn schedule_lookbehind(&self, kv: SharedKeyValueStore, header: &Header) {
+        let lookbehind_blocks = l1_header_prefetch_lookbehind_blocks();
+        if lookbehind_blocks == 0 {
+            return;
+        }
+
         let Some(first_prefetch_block) = header.number.checked_sub(1) else {
             return;
         };
-        let last_prefetch_block =
-            header.number.saturating_sub(L1_HEADER_PREFETCH_LOOKBEHIND_BLOCKS);
+        let last_prefetch_block = header.number.saturating_sub(lookbehind_blocks);
 
         let block_numbers = self
             .inner
@@ -637,25 +732,19 @@ impl L1HeaderPrefetcher {
             Err(_) => return false,
         };
 
-        let raw_header: Bytes = match self
-            .inner
-            .providers
-            .l1
-            .client()
-            .request("debug_getRawHeader", (BlockId::number(block_number),))
-            .await
-        {
-            Ok(raw_header) => raw_header,
-            Err(err) => {
-                debug!(
-                    target: HOST_SERVER_TARGET,
-                    block_number,
-                    error = %err,
-                    "l1 header prefetch skipped: failed to fetch raw header"
-                );
-                return false;
-            }
-        };
+        let raw_header =
+            match fetch_l1_raw_header_by_number(&self.inner.providers, block_number).await {
+                Ok(raw_header) => raw_header,
+                Err(err) => {
+                    debug!(
+                        target: HOST_SERVER_TARGET,
+                        block_number,
+                        error = %err,
+                        "l1 header prefetch skipped: failed to fetch raw header"
+                    );
+                    return false;
+                }
+            };
         let decoded_header = match Header::decode(&mut raw_header.as_ref()) {
             Ok(header) => header,
             Err(err) => {
@@ -923,6 +1012,14 @@ async fn handle_hint_inner(
     payload_witness_prefetcher: Option<PayloadWitnessPrefetcher>,
     l1_header_prefetcher: Option<L1HeaderPrefetcher>,
 ) -> Result<()> {
+    debug!(
+        target: HOST_SERVER_TARGET,
+        hint_type = ?hint.ty,
+        hint_data_len = hint.data.len(),
+        hint_data = ?hint.data,
+        "handling hint"
+    );
+
     match hint.ty {
         HintType::L1BlockHeader => {
             if hint.data.len() != 32 {
@@ -941,8 +1038,7 @@ async fn handle_hint_inner(
                 );
                 (raw_header, false)
             } else {
-                let raw_header: Bytes =
-                    providers.l1.client().request("debug_getRawHeader", [hash]).await?;
+                let raw_header = fetch_l1_raw_header_by_hash(providers, hash).await?;
                 (raw_header, true)
             };
             let header = Header::decode(&mut raw_header.as_ref())?;
@@ -988,8 +1084,19 @@ async fn handle_hint_inner(
             }
 
             let hash: B256 = hint.data.as_ref().try_into()?;
-            let raw_receipts: Vec<Bytes> =
-                providers.l1.client().request("debug_getRawReceipts", [hash]).await?;
+            let receipts = providers
+                .l1
+                .get_block_receipts(hash.into())
+                .await?
+                .ok_or(HostError::BlockNotFound)?;
+            let raw_receipts: Vec<Bytes> = receipts
+                .into_iter()
+                .map(|r| {
+                    let mut buf = Vec::new();
+                    r.into_primitives_receipt().inner.encode_2718(&mut buf);
+                    Bytes::from(buf)
+                })
+                .collect();
 
             store_ordered_trie(kv.as_ref(), raw_receipts.as_slice()).await?;
         }
@@ -1076,8 +1183,7 @@ async fn handle_hint_inner(
             }
 
             let hash: B256 = hint.data.as_ref().try_into()?;
-            let raw_header: Bytes =
-                providers.l2.client().request("debug_getRawHeader", [hash]).await?;
+            let raw_header = fetch_l2_raw_header_by_hash(providers, hash).await?;
 
             let mut kv_lock = kv.write().await;
             kv_lock.set(PreimageKey::new_keccak256(*hash).into(), raw_header.into())?;
@@ -1106,11 +1212,8 @@ async fn handle_hint_inner(
                 return Err(HostError::InvalidHintDataLength);
             }
 
-            let raw_header: Bytes = providers
-                .l2
-                .client()
-                .request("debug_getRawHeader", &[cfg.request.agreed_l2_head_hash])
-                .await?;
+            let raw_header =
+                fetch_l2_raw_header_by_hash(providers, cfg.request.agreed_l2_head_hash).await?;
             let header = Header::decode(&mut raw_header.as_ref())?;
 
             let l2_to_l1_message_passer = providers

@@ -1,0 +1,31 @@
+[package]
+name = "base-zisk-smoke"
+description = "Standalone end-to-end smoke test for the ZisK embedded proving path"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "base-zisk-smoke"
+path = "src/main.rs"
+
+[dependencies]
+base-proof-zisk-elfs.workspace = true
+base-proof-succinct-host-utils.workspace = true
+base-proof-zisk-proof-utils.workspace = true
+base-zk-service = { workspace = true, features = ["zisk"] }
+zisk-sdk.workspace = true
+
+url.workspace = true
+
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["fmt", "json", "env-filter"] }
+
+anyhow.workspace = true
+
+[lints]
+workspace = true

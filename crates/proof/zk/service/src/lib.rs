@@ -9,6 +9,10 @@ pub use backends::{
     OpSuccinctNetworkBackend, OpSuccinctProvider, OpSuccinctStoredExecutionStats,
     OpSuccinctWitnessParams, ProofProcessingResult, ProveResult, ProvingBackend, SessionStatus,
 };
+#[cfg(feature = "zisk")]
+pub use backends::{
+    ZiskEmbeddedBackend, ZiskMockBackend, ZiskProvider, ZiskStoredExecutionStats, ZiskWitnessParams,
+};
 
 pub mod metrics;
 pub use metrics::ProverMetrics;

@@ -107,6 +107,8 @@ const fn proto_proof_type(proof_type: DbProofType) -> ProtoProofType {
     match proof_type {
         DbProofType::OpSuccinctSp1ClusterCompressed => ProtoProofType::Compressed,
         DbProofType::OpSuccinctSp1ClusterSnarkGroth16 => ProtoProofType::SnarkGroth16,
+        DbProofType::ZiskVadcop => ProtoProofType::ZiskVadcop,
+        DbProofType::ZiskPlonk => ProtoProofType::ZiskPlonk,
     }
 }
 

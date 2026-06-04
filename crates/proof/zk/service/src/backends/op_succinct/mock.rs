@@ -159,10 +159,7 @@ impl ProvingBackend for MockBackend {
                             number_of_blocks_to_prove: proof_request.number_of_blocks_to_prove
                                 as u64,
                             sequence_window: proof_request.sequence_window.map(|w| w as u64),
-                            proof_type: match proof_request.proof_type {
-                                ProofType::OpSuccinctSp1ClusterCompressed => 3,
-                                ProofType::OpSuccinctSp1ClusterSnarkGroth16 => 4,
-                            },
+                            proof_type: proof_request.proof_type.proto_i32(),
                             session_id: None,
                             prover_address: proof_request.prover_address.clone(),
                             l1_head: proof_request.l1_head.clone(),
@@ -300,6 +297,12 @@ fn determine_mock_status(
                 error_message: None,
             }
         }
+        ProofType::ZiskVadcop | ProofType::ZiskPlonk => ProofProcessingResult {
+            status: ProofStatus::Failed,
+            error_message: Some(format!(
+                "ZisK proof type {proof_type:?} routed to OpSuccinct mock backend"
+            )),
+        },
     }
 }
 

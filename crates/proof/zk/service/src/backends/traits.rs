@@ -135,12 +135,17 @@ impl ArtifactStorageConfig {
 pub enum BackendType {
     /// SP1 proving through the Succinct backend.
     OpSuccinct,
+    /// `ZisK` (Polygon) embedded prover backend.
+    #[cfg(feature = "zisk")]
+    Zisk,
 }
 
 impl fmt::Display for BackendType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::OpSuccinct => write!(f, "op_succinct"),
+            #[cfg(feature = "zisk")]
+            Self::Zisk => write!(f, "zisk"),
         }
     }
 }
@@ -151,6 +156,8 @@ impl std::str::FromStr for BackendType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "op_succinct" | "op-succinct" => Ok(Self::OpSuccinct),
+            #[cfg(feature = "zisk")]
+            "zisk" => Ok(Self::Zisk),
             _ => Err(format!("Unknown backend type: {s}")),
         }
     }
@@ -161,6 +168,13 @@ impl From<ProofType> for BackendType {
         match proof_type {
             ProofType::OpSuccinctSp1ClusterCompressed
             | ProofType::OpSuccinctSp1ClusterSnarkGroth16 => Self::OpSuccinct,
+            #[cfg(feature = "zisk")]
+            ProofType::ZiskVadcop | ProofType::ZiskPlonk => Self::Zisk,
+            // Without the `zisk` feature, ZisK proof types fall through to a
+            // no-backend error at registry-lookup time. The `prove_block`
+            // handler rejects these requests earlier.
+            #[cfg(not(feature = "zisk"))]
+            ProofType::ZiskVadcop | ProofType::ZiskPlonk => Self::OpSuccinct,
         }
     }
 }
@@ -217,6 +231,26 @@ pub enum BackendConfig {
         agg_vk: sp1_sdk::SP1VerifyingKey,
         /// Fulfillment strategy for proof requests.
         fulfillment_strategy: sp1_sdk::network::FulfillmentStrategy,
+        /// Proof timeout in hours.
+        timeout_hours: u64,
+    },
+    /// `ZisK` embedded prover backend settings (feature `zisk`).
+    #[cfg(feature = "zisk")]
+    Zisk {
+        /// Base consensus node RPC URL.
+        base_consensus_url: String,
+        /// L1 execution node RPC URL.
+        l1_node_url: String,
+        /// L1 beacon node URL.
+        l1_beacon_url: String,
+        /// L2 execution node RPC URL.
+        l2_node_url: String,
+        /// Default sequence window for L1 head calculations.
+        default_sequence_window: u64,
+        /// Whether to preload the Plonk proving key at backend init. Required
+        /// for `ProofType::ZiskPlonk` requests; if `false` only
+        /// `ProofType::ZiskVadcop` (recursive STARK) requests succeed.
+        plonk_enabled: bool,
         /// Proof timeout in hours.
         timeout_hours: u64,
     },

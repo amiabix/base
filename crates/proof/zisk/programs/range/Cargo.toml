@@ -1,0 +1,34 @@
+[package]
+name = "base-proof-zisk-range"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "range"
+path = "src/main.rs"
+
+[dependencies]
+rkyv.workspace = true
+
+# base-consensus / base-proof
+base-proof.workspace = true
+
+# base-zisk
+base-proof-zisk-client-utils.workspace = true
+base-proof-zisk-range-utils.workspace = true
+
+# zisk
+ziskos = { workspace = true, features = ["zisk-embedded-dlmalloc-alloc"] }
+
+# `tracing-subscriber` feature dependencies
+tracing-subscriber = { workspace = true, optional = true }
+
+[features]
+tracing-subscriber = ["dep:tracing-subscriber"]
+
+[lints]
+workspace = true

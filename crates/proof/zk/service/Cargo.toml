@@ -18,14 +18,23 @@ base-proof-succinct-host-utils.workspace = true
 base-proof-succinct-proof-utils.workspace = true
 base-proof-succinct-client-utils.workspace = true
 base-proof-succinct-ethereum-host-utils.workspace = true
-sp1-sdk.workspace = true 
+sp1-sdk.workspace = true
 sp1-prover-types.workspace = true
 sp1-cluster-utils.workspace = true
 sp1-cluster-common.workspace = true
 sp1-cluster-artifact.workspace = true
 
+# ZisK (opt-in via `zisk` feature). Pulled as optional deps so non-ZisK builds
+# don't drag in the Plonky3 / ziskos dependency closure. Data fetching reuses
+# the existing `base-proof-succinct-host-utils` (RPC layer is zkVM-neutral).
+base-proof-zisk-elfs = { workspace = true, optional = true }
+base-proof-zisk-proof-utils = { workspace = true, optional = true }
+base-proof-zisk-client-utils = { workspace = true, optional = true }
+zisk-sdk = { workspace = true, optional = true }
+
 # Network
 base-common-network.workspace = true
+alloy-eips.workspace = true
 alloy-primitives.workspace = true
 alloy-rpc-types.workspace = true
 alloy-provider.workspace = true
@@ -46,10 +55,12 @@ nonzero_ext.workspace = true
 
 bincode = { workspace = true, features = ["serde"] }
 serde_json.workspace = true
+serde_cbor.workspace = true
 serde = { workspace = true, features = ["derive"] }
 uuid = { workspace = true, features = ["v4", "serde"] }
 
 anyhow.workspace = true
+rkyv.workspace = true
 
 metrics.workspace = true
 tracing.workspace = true
@@ -61,6 +72,18 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tonic = { workspace = true, features = ["transport"] }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 uuid = { workspace = true, features = ["v4"] }
+
+[features]
+default = []
+# Compile in the ZisK embedded prover backend. Adds `BackendType::Zisk`
+# and `BackendConfig::Zisk` variants and registers the embedded prover with
+# the backend registry at runtime when consumers initialize it.
+zisk = [
+  "dep:base-proof-zisk-elfs",
+  "dep:base-proof-zisk-proof-utils",
+  "dep:base-proof-zisk-client-utils",
+  "dep:zisk-sdk",
+]
 
 [lints]
 workspace = true

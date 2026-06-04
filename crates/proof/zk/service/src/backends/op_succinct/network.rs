@@ -413,6 +413,12 @@ impl NetworkBackend {
                     ProofProcessingResult { status: ProofStatus::Running, error_message: None }
                 }
             }
+            ProofType::ZiskVadcop | ProofType::ZiskPlonk => ProofProcessingResult {
+                status: ProofStatus::Failed,
+                error_message: Some(format!(
+                    "ZisK proof type {proof_type:?} routed to OpSuccinct network backend"
+                )),
+            },
         }
     }
 

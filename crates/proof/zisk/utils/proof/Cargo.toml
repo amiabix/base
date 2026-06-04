@@ -1,0 +1,18 @@
+[package]
+name = "base-proof-zisk-proof-utils"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+anyhow.workspace = true
+zisk-sdk.workspace = true
+alloy-primitives.workspace = true
+base-proof-zisk-client-utils.workspace = true
+
+[lints]
+workspace = true

@@ -47,10 +47,23 @@ impl ProverServiceServer {
         let proof_type = ProofType::try_from(prove_block_request.proof_type)
             .map_err(|e| Status::invalid_argument(format!("Invalid proof_type: {e}")))?;
 
-        // Validate prover_address for SNARK_GROTH16 proofs
-        if proof_type == ProofType::OpSuccinctSp1ClusterSnarkGroth16 {
+        #[cfg(not(feature = "zisk"))]
+        if matches!(proof_type, ProofType::ZiskVadcop | ProofType::ZiskPlonk) {
+            return Err(Status::failed_precondition(
+                "ZisK proof types require the base-zk-service `zisk` feature",
+            ));
+        }
+
+        // Validate prover_address for SNARK_GROTH16 + ZISK_PLONK proofs:
+        // both stamp the prover's on-chain address into the aggregation public
+        // values, so a missing address must reject the request before it
+        // reaches the backend.
+        if matches!(proof_type, ProofType::OpSuccinctSp1ClusterSnarkGroth16 | ProofType::ZiskPlonk)
+        {
             let addr_str = prove_block_request.prover_address.as_deref().ok_or_else(|| {
-                Status::invalid_argument("prover_address is required for SNARK_GROTH16 proof type")
+                Status::invalid_argument(format!(
+                    "prover_address is required for {proof_type} proof type"
+                ))
             })?;
             addr_str.parse::<alloy_primitives::Address>().map_err(|e| {
                 Status::invalid_argument(format!(

@@ -9,13 +9,19 @@ exclude = [".github/"]
 
 [workspace]
 resolver = "2"
-exclude = ["bin/prover", "crates/proof/succinct/programs", "actions/fixtures"]
+exclude = [
+  "bin/prover",
+  "crates/proof/succinct/programs",
+  "crates/proof/zisk/programs",
+  "actions/fixtures",
+]
 members = [
   "bin/*",
   "bin/prover/nitro-host",
   "bin/prover/nitro-enclave",
   "bin/prover/zk",
   "bin/prover/snark-e2e",
+  "bin/prover/zisk-smoke",
   "crates/consensus/*",
   "crates/proof/mpt",
   "crates/proof/proof",
@@ -53,6 +59,11 @@ members = [
   "crates/proof/succinct/utils/ethereum/host",
   "crates/proof/succinct/scripts/*",
   "crates/proof/succinct/validity",
+
+  "crates/proof/zisk/utils/client",
+  "crates/proof/zisk/utils/build",
+  "crates/proof/zisk/utils/elfs",
+  "crates/proof/zisk/utils/proof",
 
   "crates/utilities/*",
   "crates/batcher/*",
@@ -267,6 +278,14 @@ base-proof-succinct-client-utils = { path = "crates/proof/succinct/utils/client"
 base-proof-succinct-signer-utils = { path = "crates/proof/succinct/utils/signer" }
 base-proof-succinct-ethereum-host-utils = { path = "crates/proof/succinct/utils/ethereum/host" }
 base-proof-succinct-ethereum-client-utils = { path = "crates/proof/succinct/utils/ethereum/client" }
+
+# ZisK (Polygon zkVM proving — gated behind `zisk` feature in consumers)
+base-proof-zisk-elfs = { path = "crates/proof/zisk/utils/elfs" }
+base-proof-zisk-build-utils = { path = "crates/proof/zisk/utils/build" }
+base-proof-zisk-proof-utils = { path = "crates/proof/zisk/utils/proof" }
+base-proof-zisk-client-utils = { path = "crates/proof/zisk/utils/client" }
+zisk-sdk = { git = "https://github.com/0xPolygonHermez/zisk", tag = "v0.18.0" }
+zkvm-interface = { git = "https://github.com/0xPolygonHermez/zisk.git", tag = "v0.18.0" }
 
 # Actions
 base-action-harness = { path = "actions/harness" }
@@ -496,6 +515,7 @@ libp2p-identity = "0.2.12"
 # serde
 bincode = "2"
 serde_bytes = "0.11"
+serde_arrays = "0.2.0"
 serde_with = "3.8.1"
 ethereum_ssz = "0.10"
 serde_yaml = "0.9.34"

@@ -12,17 +12,14 @@ repository.workspace = true
 name = "base-prover-zk"
 path = "src/main.rs"
 
-[lints]
-workspace = true
-
 [dependencies]
-# Workspace – ZK
+# Workspace - ZK
 base-zk-db.workspace = true
 base-zk-outbox.workspace = true
 base-zk-service.workspace = true
 base-zk-client = { workspace = true, features = ["server"] }
 
-# Workspace – Succinct / SP1
+# Workspace - Succinct / SP1
 base-proof-succinct-host-utils.workspace = true
 base-proof-succinct-proof-utils.workspace = true
 sp1-cluster-common.workspace = true
@@ -53,3 +50,10 @@ url.workspace = true
 
 # Tracing
 tracing.workspace = true
+
+[features]
+default = []
+zisk = ["base-zk-service/zisk"]
+
+[lints]
+workspace = true

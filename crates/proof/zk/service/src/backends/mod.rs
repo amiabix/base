@@ -11,6 +11,14 @@ pub use op_succinct::{
     WitnessParams as OpSuccinctWitnessParams,
 };
 
+#[cfg(feature = "zisk")]
+mod zisk;
+#[cfg(feature = "zisk")]
+pub use zisk::{
+    EmbeddedBackend as ZiskEmbeddedBackend, MockBackend as ZiskMockBackend,
+    WitnessParams as ZiskWitnessParams, ZiskProvider, ZiskStoredExecutionStats,
+};
+
 mod traits;
 pub use traits::{
     ArtifactClientWrapper, ArtifactStorageConfig, BackendConfig, BackendRegistry, BackendType,

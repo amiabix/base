@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt, sync::Arc, time::Duration};
+use std::{collections::HashSet, env, fmt, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use base_proof::{Hint, HintType};
@@ -16,16 +16,24 @@ use crate::{
     },
 };
 
-/// Cap on `handle_hint` attempts before [`OnlineHostBackend::get_preimage`] gives up; previously
-/// the loop was unbounded and could pin a [`PreimageServer`](crate::PreimageServer) task forever
-/// when an upstream RPC consistently failed.
-const MAX_HINT_ATTEMPTS: u32 = 5;
+/// Default cap on `handle_hint` attempts before [`OnlineHostBackend::get_preimage`] gives up.
+const DEFAULT_MAX_HINT_ATTEMPTS: u32 = 5;
 
-/// Initial backoff between hint retry attempts; doubles each attempt up to [`MAX_HINT_RETRY_BACKOFF`].
-const INITIAL_HINT_RETRY_BACKOFF: Duration = Duration::from_millis(50);
+/// Initial backoff between hint retry attempts; doubles each attempt up to
+/// [`DEFAULT_MAX_HINT_RETRY_BACKOFF`].
+const DEFAULT_INITIAL_HINT_RETRY_BACKOFF: Duration = Duration::from_millis(50);
 
 /// Cap on per-attempt backoff between hint retries.
-const MAX_HINT_RETRY_BACKOFF: Duration = Duration::from_secs(1);
+const DEFAULT_MAX_HINT_RETRY_BACKOFF: Duration = Duration::from_secs(1);
+
+/// Environment variable overriding the number of hint attempts.
+const HINT_MAX_ATTEMPTS_ENV: &str = "BASE_HINT_MAX_ATTEMPTS";
+/// Environment variable overriding the initial hint retry backoff in milliseconds.
+const HINT_RETRY_INITIAL_MS_ENV: &str = "BASE_HINT_RETRY_INITIAL_MS";
+/// Environment variable overriding the maximum hint retry backoff in milliseconds.
+const HINT_RETRY_MAX_MS_ENV: &str = "BASE_HINT_RETRY_MAX_MS";
+/// Environment variable adding a delay before each hint attempt in milliseconds.
+const HINT_REQUEST_DELAY_MS_ENV: &str = "BASE_HINT_REQUEST_DELAY_MS";
 
 /// Fetches data from remote sources in response to hints.
 pub struct OnlineHostBackend {
@@ -138,9 +146,34 @@ impl PreimageFetcher for OnlineHostBackend {
             )));
         };
 
-        let mut backoff = INITIAL_HINT_RETRY_BACKOFF;
+        let max_hint_attempts = env::var(HINT_MAX_ATTEMPTS_ENV)
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|attempts| *attempts > 0)
+            .unwrap_or(DEFAULT_MAX_HINT_ATTEMPTS);
+        let initial_backoff = env::var(HINT_RETRY_INITIAL_MS_ENV)
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_millis)
+            .unwrap_or(DEFAULT_INITIAL_HINT_RETRY_BACKOFF);
+        let max_backoff = env::var(HINT_RETRY_MAX_MS_ENV)
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_millis)
+            .unwrap_or(DEFAULT_MAX_HINT_RETRY_BACKOFF);
+        let request_delay = env::var(HINT_REQUEST_DELAY_MS_ENV)
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_millis)
+            .unwrap_or_default();
+
+        let mut backoff = initial_backoff;
         let mut last_error: Option<String> = None;
-        for attempt in 1..=MAX_HINT_ATTEMPTS {
+        for attempt in 1..=max_hint_attempts {
+            if !request_delay.is_zero() {
+                time::sleep(request_delay).await;
+            }
+
             match handle_hint_with_prefetchers(
                 hint.clone(),
                 &self.cfg,
@@ -178,14 +211,14 @@ impl PreimageFetcher for OnlineHostBackend {
                         error = %e,
                         hint = ?hint,
                         attempt,
-                        max_attempts = MAX_HINT_ATTEMPTS,
+                        max_attempts = max_hint_attempts,
                         "failed to prefetch hint",
                     );
                     last_error = Some(message);
 
-                    if attempt < MAX_HINT_ATTEMPTS {
+                    if attempt < max_hint_attempts {
                         time::sleep(backoff).await;
-                        backoff = (backoff * 2).min(MAX_HINT_RETRY_BACKOFF);
+                        backoff = (backoff * 2).min(max_backoff);
                     }
                 }
             }
@@ -193,7 +226,7 @@ impl PreimageFetcher for OnlineHostBackend {
 
         let last_error = last_error.unwrap_or_else(|| "unknown error".to_string());
         Err(PreimageOracleError::Other(format!(
-            "exhausted {MAX_HINT_ATTEMPTS} hint attempts for preimage {key}: {last_error}",
+            "exhausted {max_hint_attempts} hint attempts for preimage {key}: {last_error}",
         )))
     }
 }

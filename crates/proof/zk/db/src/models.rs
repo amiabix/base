@@ -214,6 +214,13 @@ pub enum ProofType {
     /// SNARK Groth16 proof generated via the Succinct SP1 cluster.
     #[sqlx(rename = "op_succinct_sp1_cluster_snark_groth16")]
     OpSuccinctSp1ClusterSnarkGroth16,
+    /// Recursive VADCOP STARK proof generated via the `ZisK` embedded prover.
+    #[sqlx(rename = "zisk_vadcop")]
+    ZiskVadcop,
+    /// Final BN254 Plonk SNARK generated via the `ZisK` embedded prover,
+    /// suitable for on-chain verification.
+    #[sqlx(rename = "zisk_plonk")]
+    ZiskPlonk,
 }
 
 impl ProofType {
@@ -221,12 +228,18 @@ impl ProofType {
     pub const PROTO_COMPRESSED: i32 = 3;
     /// Proto discriminant for `PROOF_TYPE_SNARK_GROTH16`.
     pub const PROTO_SNARK_GROTH16: i32 = 4;
+    /// Proto discriminant for `PROOF_TYPE_ZISK_VADCOP`.
+    pub const PROTO_ZISK_VADCOP: i32 = 5;
+    /// Proto discriminant for `PROOF_TYPE_ZISK_PLONK`.
+    pub const PROTO_ZISK_PLONK: i32 = 6;
 
     /// Returns the proto wire value for this proof type.
     pub const fn proto_i32(&self) -> i32 {
         match self {
             Self::OpSuccinctSp1ClusterCompressed => Self::PROTO_COMPRESSED,
             Self::OpSuccinctSp1ClusterSnarkGroth16 => Self::PROTO_SNARK_GROTH16,
+            Self::ZiskVadcop => Self::PROTO_ZISK_VADCOP,
+            Self::ZiskPlonk => Self::PROTO_ZISK_PLONK,
         }
     }
 
@@ -235,6 +248,8 @@ impl ProofType {
         match self {
             Self::OpSuccinctSp1ClusterCompressed => "op_succinct_sp1_cluster_compressed",
             Self::OpSuccinctSp1ClusterSnarkGroth16 => "op_succinct_sp1_cluster_snark_groth16",
+            Self::ZiskVadcop => "zisk_vadcop",
+            Self::ZiskPlonk => "zisk_plonk",
         }
     }
 }
@@ -252,6 +267,8 @@ impl TryFrom<&str> for ProofType {
         match s {
             "op_succinct_sp1_cluster_compressed" => Ok(Self::OpSuccinctSp1ClusterCompressed),
             "op_succinct_sp1_cluster_snark_groth16" => Ok(Self::OpSuccinctSp1ClusterSnarkGroth16),
+            "zisk_vadcop" => Ok(Self::ZiskVadcop),
+            "zisk_plonk" => Ok(Self::ZiskPlonk),
             other => Err(format!("Unknown proof type: {other}")),
         }
     }
@@ -265,6 +282,8 @@ impl TryFrom<i32> for ProofType {
         match value {
             Self::PROTO_COMPRESSED => Ok(Self::OpSuccinctSp1ClusterCompressed),
             Self::PROTO_SNARK_GROTH16 => Ok(Self::OpSuccinctSp1ClusterSnarkGroth16),
+            Self::PROTO_ZISK_VADCOP => Ok(Self::ZiskVadcop),
+            Self::PROTO_ZISK_PLONK => Ok(Self::ZiskPlonk),
             _ => Err(format!("Unknown proof type: {value}")),
         }
     }
@@ -502,10 +521,11 @@ mod tests {
     fn test_proof_type_try_from_proto() {
         assert_eq!(ProofType::try_from(3).unwrap(), ProofType::OpSuccinctSp1ClusterCompressed);
         assert_eq!(ProofType::try_from(4).unwrap(), ProofType::OpSuccinctSp1ClusterSnarkGroth16);
+        assert_eq!(ProofType::try_from(5).unwrap(), ProofType::ZiskVadcop);
+        assert_eq!(ProofType::try_from(6).unwrap(), ProofType::ZiskPlonk);
 
         assert!(ProofType::try_from(0).is_err());
         assert!(ProofType::try_from(1).is_err());
         assert!(ProofType::try_from(2).is_err());
-        assert!(ProofType::try_from(5).is_err());
     }
 }

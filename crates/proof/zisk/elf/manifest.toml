@@ -1,0 +1,24 @@
+# ZisK ELF artifact manifest.
+#
+# The binaries themselves are NOT committed to git - only their sha256.
+# To (re)build them locally run:
+#
+#     just zisk build-elfs
+#
+# Then update this manifest with:
+#
+#     just zisk write-manifest
+#
+# Commit the resulting manifest change together with the code change that caused
+# the ELF to change.
+#
+# The `base-proof-zisk-elfs` crate's build.rs verifies the local cache against
+# these hashes; builds fail fast if they drift.
+
+[[elfs]]
+name = "range-elf-embedded"
+sha256 = "8a3fd2d6a49d039e350c99377268c561bb7e2f5eded6cb7c9cf5fc894129cdf6"
+
+[[elfs]]
+name = "aggregation-elf"
+sha256 = "476af72bee18619eeab5c1c0d95d02aaf98b51ba61427685962df0eb091365d9"

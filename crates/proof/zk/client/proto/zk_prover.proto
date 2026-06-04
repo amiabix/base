@@ -13,6 +13,8 @@ enum ProofType {
   reserved 1, 2;
   PROOF_TYPE_COMPRESSED = 3;
   PROOF_TYPE_SNARK_GROTH16 = 4;
+  PROOF_TYPE_ZISK_VADCOP = 5;
+  PROOF_TYPE_ZISK_PLONK = 6;
 }
 
 message ProveBlockRequest {
@@ -43,6 +45,13 @@ enum ReceiptType {
   RECEIPT_TYPE_STARK = 1;
   RECEIPT_TYPE_SNARK = 2;
   RECEIPT_TYPE_ON_CHAIN_SNARK = 3;
+  // ZisK receipts. VADCOP carries the recursive STARK proof; PLONK
+  // carries the BN254 SNARK; ON_CHAIN_PLONK carries the calldata-shaped
+  // payload an `AggregateVerifier` expects (proof-type byte prefix 0x02
+  // followed by the Plonk proof and public bytes).
+  RECEIPT_TYPE_ZISK_VADCOP = 4;
+  RECEIPT_TYPE_ZISK_PLONK = 5;
+  RECEIPT_TYPE_ZISK_ON_CHAIN_PLONK = 6;
 }
 
 message GetProofRequest {

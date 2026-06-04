@@ -135,6 +135,8 @@ pub const fn proof_type_label(proof_type: ProofType) -> &'static str {
     match proof_type {
         ProofType::OpSuccinctSp1ClusterCompressed => "compressed",
         ProofType::OpSuccinctSp1ClusterSnarkGroth16 => "snark_groth16",
+        ProofType::ZiskVadcop => "zisk_vadcop",
+        ProofType::ZiskPlonk => "zisk_plonk",
     }
 }
 

@@ -12,4 +12,9 @@ eif*.bin
 crates/proof/succinct/elf/range-elf-embedded
 crates/proof/succinct/elf/aggregation-elf
 crates/proof/succinct/elf/*.bin
+# ZisK ELF binaries are built on demand and not committed.
+crates/proof/zisk/elf/range-elf-embedded
+crates/proof/zisk/elf/aggregation-elf
+crates/proof/zisk/elf/*.bin
+data/*/witness-cache/
 /etc/scripts/local/__pycache__/

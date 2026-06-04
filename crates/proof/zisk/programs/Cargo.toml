@@ -1,0 +1,79 @@
+# Sub-workspace for the ZisK zkVM guest programs (range + aggregation).
+#
+# These crates are built separately via `just zisk build-elfs`
+# (which shells out to `cargo zisk build` with the ZisK toolchain and
+# the `riscv64ima-zisk-zkvm-elf` target).
+
+[workspace]
+resolver = "2"
+members = [
+  "aggregation",
+  "range",
+  "range/utils",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.93"
+license = "MIT"
+homepage = "https://github.com/base/base"
+repository = "https://github.com/base/base"
+
+[workspace.lints.rust]
+missing-debug-implementations = "warn"
+missing-docs = "warn"
+unreachable-pub = "warn"
+unused-must-use = "deny"
+rust-2018-idioms = "deny"
+unnameable-types = "warn"
+
+[workspace.lints.rustdoc]
+all = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+# Internal members
+base-proof-zisk-range-utils = { path = "range/utils" }
+base-proof = { path = "../../../proof/proof", default-features = false }
+base-proof-zisk-client-utils = { path = "../utils/client" }
+
+# ZisK SDK 0.18.
+ziskos = { git = "https://github.com/0xPolygonHermez/zisk", tag = "v0.18.0" }
+
+# alloy (must match root Cargo.toml versions)
+alloy-consensus = { version = "2.0.4", default-features = false }
+alloy-sol-types = { version = "1.5.6", default-features = false }
+alloy-primitives = { version = "1.5.6", default-features = false, features = ["native-keccak"] }
+
+# misc (must match root Cargo.toml versions)
+rkyv = "0.8"
+anyhow = "1.0"
+serde = { version = "1.0", default-features = false }
+serde_cbor = "0.11.2"
+bincode = "1.3.3"
+sha2 = { version = "0.10", default-features = false }
+tracing = { version = "0.1.43", default-features = false }
+tracing-subscriber = "0.3.22"
+
+[profile.dev]
+debug = "line-tables-only"
+incremental = true
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+debug = "none"
+strip = "symbols"
+panic = "abort"
+codegen-units = 1
+
+# ZisK zkVM crypto patches. The Polygon Hermez tiny-keccak fork swaps the
+# pure-Rust permutation for the `keccakf` precompile when built for
+# `target_os = "zkvm"`; on native builds it is a no-op. Tag `-zisk-0.16.0+`
+# is the upstream's "0.16 onwards" cut and includes the `hints` API that
+# ziskos 0.18 uses; prefer it over the older `-zisk-0.15.0` tag.
+[patch.crates-io]
+tiny-keccak = { git = "https://github.com/0xPolygonHermez/zisk-patch-tiny-keccak.git", tag = "patch-2.0.2-zisk-0.16.0+" }
