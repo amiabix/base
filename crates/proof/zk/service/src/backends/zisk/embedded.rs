@@ -121,17 +121,35 @@ impl EmbeddedBackend {
             info!(max_witness_stored, "limiting ZisK queued GPU witnesses");
             opts = opts.max_witness_stored(max_witness_stored);
         }
-        let mut builder = ProverClient::embedded().with_embedded_opts(opts);
+        let executor = env::var("BASE_ZISK_EXECUTOR").unwrap_or_else(|_| "emulator".to_string());
+        let gpu_enabled = env::var("BASE_ZISK_GPU").as_deref() == Ok("1");
 
-        if env::var("BASE_ZISK_EXECUTOR").as_deref() == Ok("assembly") {
-            builder = builder.assembly();
+        let mut builder = ProverClient::embedded().with_embedded_opts(opts);
+        match executor.as_str() {
+            "emulator" => {}
+            "assembly" => {
+                builder = builder.assembly();
+            }
+            value => {
+                return Err(anyhow::anyhow!(
+                    "BASE_ZISK_EXECUTOR must be 'emulator' or 'assembly', got '{value}'"
+                ));
+            }
         }
-        if env::var("BASE_ZISK_GPU").as_deref() == Ok("1") {
+
+        if gpu_enabled {
             builder = builder.gpu();
         }
         if plonk_enabled {
             builder = builder.plonk();
         }
+
+        info!(
+            executor = %executor,
+            gpu_enabled,
+            plonk_enabled,
+            "configured ZisK embedded prover"
+        );
 
         builder.build()
     }
