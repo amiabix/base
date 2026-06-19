@@ -64,7 +64,7 @@ sol! {
 /// Public values parsed from a verifier-shaped VADCOP proof blob.
 ///
 /// VADCOP blobs start with the public-word count. The first four public words
-/// are the program VK, followed by the fixed ZisK public-output words. The
+/// are the program VK, followed by the fixed `ZisK` public-output words. The
 /// verifier key is a four-word suffix after the proof body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VadcopProofPublics {

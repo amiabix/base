@@ -25,7 +25,7 @@ pub struct SmokeRunOutput {
     pub receipt_bytes: usize,
 }
 
-/// Runner for the ZisK smoke harness.
+/// Runner for the `ZisK` smoke harness.
 #[derive(Debug, Clone, Copy)]
 pub struct SmokeRunner;
 

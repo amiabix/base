@@ -1,4 +1,4 @@
-//! Embedded ZisK proving backend.
+//! Embedded `ZisK` proving backend.
 //!
 //! Submits range VADCOP proofs in-process and queues the aggregation/PLONK
 //! stage after a PLONK request has a completed range proof.
@@ -484,7 +484,7 @@ impl EmbeddedBackend {
         Ok(stdin)
     }
 
-    /// Load the BootInfoStruct produced during range witness generation.
+    /// Load the `BootInfoStruct` produced during range witness generation.
     async fn range_boot_info_from_metadata(
         &self,
         proof_request: &ProofRequest,

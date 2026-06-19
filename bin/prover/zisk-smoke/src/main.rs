@@ -1,4 +1,4 @@
-//! Binary entry point for the Base ZisK smoke harness.
+//! Binary entry point for the Base `ZisK` smoke harness.
 
 use anyhow::Result;
 use base_zisk_smoke::{SmokeConfig, SmokeRunner};

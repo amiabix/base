@@ -1,7 +1,7 @@
 //! Crypto provider for `ZisK` guest execution.
 //!
 //! On the `riscv64ima-zisk-zkvm-elf` target, crypto operations dispatch to
-//! ZisK's zkvm-standards C accelerator interface exported by `zkvm-interface`
+//! `ZisK`'s zkvm-standards C accelerator interface exported by `zkvm-interface`
 //! (`zkvm_accelerators.h`). On native targets the calls fall through to
 //! `revm::precompile::DefaultCrypto`, so the same provider is usable from
 //! host unit tests.
@@ -12,7 +12,7 @@ use revm::precompile::{Crypto, PrecompileHalt};
 #[cfg(all(target_os = "zkvm", target_vendor = "zisk"))]
 use zkvm_interface::*;
 
-/// Crypto provider backed by ZisK's zkvm-standards accelerator interface.
+/// Crypto provider backed by `ZisK`'s zkvm-standards accelerator interface.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CustomCrypto;
 

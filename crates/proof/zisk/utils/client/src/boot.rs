@@ -42,7 +42,7 @@ pub fn decode_boot_info(input: &[u8]) -> Result<BootInfoStruct> {
     bincode::deserialize(input).context("bincode deserialize BootInfoStruct")
 }
 
-/// Compute the compact public value committed by the ZisK range guest.
+/// Compute the compact public value committed by the `ZisK` range guest.
 pub fn boot_info_commitment(boot_info: &BootInfoStruct) -> B256 {
     keccak256(encode_boot_info(boot_info))
 }

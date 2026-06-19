@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use base_proof_succinct_host_utils::fetcher::RPCConfig;
 use url::Url;
 
-/// Environment-driven configuration for the ZisK smoke harness.
+/// Environment-driven configuration for the `ZisK` smoke harness.
 #[derive(Debug, Clone)]
 pub struct SmokeConfig {
     /// Optional RPC configuration used on witness cache misses.
